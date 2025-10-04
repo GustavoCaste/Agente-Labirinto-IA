@@ -16,14 +16,15 @@ DIRECOES = {
 DELTA_TO_DIR = {v: k for k, v in DIRECOES.items()}
 
 class Agente:
-    def __init__(self, ambiente: Ambiente, direcao_inicial: str = 'N'):
+    def __init__(self, ambiente: Ambiente, direcao_inicial: str = 'N', comidas_alvo: Optional[int] = None):
         self.env = ambiente
         self.i, self.j = self.env.entrada
         self.dir = direcao_inicial
 
         self.passos = 0
         self.comidas_coletadas = 0
-        self.comidas_alvo = self.env.total_comidas
+        # Agora a quantidade de comidas pode ser passada explicitamente na instanciação
+        self.comidas_alvo = comidas_alvo if comidas_alvo is not None else self.env.total_comidas
 
         # memória do mapa descoberto
         self.mem: Dict[Tuple[int,int], str] = {}
@@ -172,7 +173,6 @@ class Agente:
     # ===== ORDEM DE DIREÇÕES COM ANTI-BOUNCE =====
     def _direcoes_ordenadas(self) -> List[str]:
         """Ordena direções priorizando não voltar para ultima_pos e menos visitados."""
-        atual = (self.i, self.j)
         cand = []
         for d, (di, dj) in DIRECOES.items():
             q = (self.i + di, self.j + dj)

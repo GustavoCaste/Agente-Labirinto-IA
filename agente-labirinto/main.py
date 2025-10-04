@@ -21,14 +21,15 @@ def render(env: Ambiente, ag: Agente):
 
 def main():
     # Arquivo do labirinto (mapas/maze.txt)
-    caminho_mapa = Path("mapas") / "maze_grande.txt"
+    caminho_mapa = Path("mapas") / "maze.txt"
     if not caminho_mapa.exists():
         print(f"[ERRO] Arquivo do mapa não encontrado em: {caminho_mapa}")
         return
 
     # Instancia ambiente e agente
     env = Ambiente(str(caminho_mapa))
-    ag = Agente(env, direcao_inicial='N')
+    # passa explicitamente a quantidade de comidas para cumprir o enunciado literalmente
+    ag = Agente(env, direcao_inicial='N', comidas_alvo=env.total_comidas)
 
     # Info inicial
     print("=== INFO AMBIENTE ===")
