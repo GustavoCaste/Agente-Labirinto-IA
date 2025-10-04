@@ -1,8 +1,7 @@
 # ambiente.py
-
 # Essa classe representa o "mundo" onde o agente vai andar.
 
-from typing import List, Tuple  # só para dicas de tipo (não precisa instalar nada)
+from typing import List, Tuple  # apenas dicas de tipo
 
 class Ambiente:
     def __init__(self, caminho_txt: str):
@@ -21,7 +20,7 @@ class Ambiente:
         self.total_comidas = sum(linha.count('o') for linha in self.grid)
 
     def _carregar(self, caminho: str) -> List[List[str]]:
-        # abre o arquivo de texto e lê todas as linhas
+        # abre o arquivo de texto e lê todas as linhas (ignora linhas vazias finais)
         with open(caminho, 'r', encoding='utf-8') as f:
             linhas = [list(l.strip('\n')) for l in f.readlines() if l.strip('\n')]
         # valida se todas as linhas têm o mesmo tamanho
@@ -63,3 +62,36 @@ class Ambiente:
             self.grid[i][j] = '_'
             return True
         return False
+
+    # === SENSOR 3x3 ===
+    def get_sensor(self, i: int, j: int, direcao: str) -> List[List[str]]:
+        """
+        Retorna uma matriz 3x3 com o entorno do agente.
+        Padrão adotado (linhas x colunas):
+            [0,0]=NW  [0,1]=N   [0,2]=NE
+            [1,0]=W   [1,1]=C   [1,2]=E
+            [2,0]=SW  [2,1]=S   [2,2]=DIRECAO (letra 'N','S','L','O')
+
+        Fora do mapa conta como 'X'. [1,1] reflete o terreno atual.
+        """
+        sensor = [['X' for _ in range(3)] for _ in range(3)]
+
+        # vizinhança relativa ao (i,j)
+        rel = [
+            (-1, -1), (-1, 0), (-1, 1),
+            (0,  -1), (0,  0), (0,  1),
+            (1,  -1), (1,  0), (1,  1),
+        ]
+
+        idx = 0
+        for r in range(3):
+            for c in range(3):
+                if r == 2 and c == 2:
+                    # posição de direção do agente (exigência do enunciado)
+                    sensor[r][c] = direcao
+                else:
+                    di, dj = rel[idx]
+                    sensor[r][c] = self.celula(i + di, j + dj)
+                idx += 1
+
+        return sensor
