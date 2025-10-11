@@ -1,7 +1,7 @@
 # ambiente.py
 # Essa classe representa o "mundo" onde o agente vai andar.
 
-from typing import List, Tuple  # apenas dicas de tipo
+from typing import Dict, List, Tuple
 
 class Ambiente:
     def __init__(self, caminho_txt: str):
@@ -20,16 +20,13 @@ class Ambiente:
         self.total_comidas = sum(linha.count('o') for linha in self.grid)
 
     def _carregar(self, caminho: str) -> List[List[str]]:
-        # abre o arquivo de texto e lê todas as linhas (ignora linhas vazias finais)
         with open(caminho, 'r', encoding='utf-8') as f:
             linhas = [list(l.strip('\n')) for l in f.readlines() if l.strip('\n')]
-        # valida se todas as linhas têm o mesmo tamanho
         larg = len(linhas[0])
         assert all(len(l) == larg for l in linhas), "Mapa com larguras diferentes."
         return linhas
 
     def _achar(self, alvo: str) -> Tuple[int, int]:
-        # procura a primeira ocorrência de um símbolo (ex: 'E')
         for i, linha in enumerate(self.grid):
             for j, c in enumerate(linha):
                 if c == alvo:
@@ -37,7 +34,6 @@ class Ambiente:
         raise ValueError(f"Símbolo '{alvo}' não encontrado no mapa.")
 
     def _achar_todos(self, alvo: str) -> List[Tuple[int, int]]:
-        # retorna todas as posições de um símbolo (ex: todas as saídas 'S')
         coords = []
         for i, linha in enumerate(self.grid):
             for j, c in enumerate(linha):
@@ -46,18 +42,14 @@ class Ambiente:
         return coords
 
     def dentro(self, i: int, j: int) -> bool:
-        # verifica se uma posição está dentro do mapa
         return 0 <= i < self.alt and 0 <= j < self.larg
 
     def celula(self, i: int, j: int) -> str:
-        # retorna o que existe na posição (i,j)
-        # se estiver fora do mapa, conta como parede 'X'
         if not self.dentro(i, j):
             return 'X'
         return self.grid[i][j]
 
     def coletar_se_comida(self, i: int, j: int) -> bool:
-        # se houver comida na posição, substitui por '_' e retorna True
         if self.grid[i][j] == 'o':
             self.grid[i][j] = '_'
             return True
@@ -65,18 +57,8 @@ class Ambiente:
 
     # === SENSOR 3x3 ===
     def get_sensor(self, i: int, j: int, direcao: str) -> List[List[str]]:
-        """
-        Retorna uma matriz 3x3 com o entorno do agente.
-        Padrão adotado (linhas x colunas):
-            [0,0]=NW  [0,1]=N   [0,2]=NE
-            [1,0]=W   [1,1]=C   [1,2]=E
-            [2,0]=SW  [2,1]=S   [2,2]=DIRECAO (letra 'N','S','L','O')
-
-        Fora do mapa conta como 'X'. [1,1] reflete o terreno atual.
-        """
         sensor = [['X' for _ in range(3)] for _ in range(3)]
 
-        # vizinhança relativa ao (i,j)
         rel = [
             (-1, -1), (-1, 0), (-1, 1),
             (0,  -1), (0,  0), (0,  1),
@@ -87,7 +69,6 @@ class Ambiente:
         for r in range(3):
             for c in range(3):
                 if r == 2 and c == 2:
-                    # posição de direção do agente (exigência do enunciado)
                     sensor[r][c] = direcao
                 else:
                     di, dj = rel[idx]
@@ -95,3 +76,36 @@ class Ambiente:
                 idx += 1
 
         return sensor
+
+    def _contar_ray(self, i: int, j: int, di: int, dj: int) -> int:
+        ci, cj = i + di, j + dj
+        total = 0
+        while self.dentro(ci, cj):
+            if self.grid[ci][cj] == 'o':
+                total += 1
+            ci += di
+            cj += dj
+        return total
+
+    def _contar_setor(self, i: int, j: int, sinal_i: int, sinal_j: int) -> int:
+        total = 0
+        for r in range(self.alt):
+            for c in range(self.larg):
+                cond_i = (r - i) * sinal_i < 0   # acima (−1) / abaixo (+1)
+                cond_j = (c - j) * sinal_j > 0   # direita (+1) / esquerda (−1)
+                if cond_i and cond_j and self.grid[r][c] == 'o':
+                    total += 1
+        return total
+
+    def contar_comidas_direcoes(self, i: int, j: int) -> Dict[str, int]:
+        n = self._contar_ray(i, j, -1,  0)
+        s = self._contar_ray(i, j,  1,  0)
+        l = self._contar_ray(i, j,  0,  1)
+        o = self._contar_ray(i, j,  0, -1)
+
+        ne = self._contar_setor(i, j, -1, +1)
+        no = self._contar_setor(i, j, -1, -1)
+        se = self._contar_setor(i, j, +1, +1)
+        so = self._contar_setor(i, j, +1, -1)
+
+        return {'N': n, 'S': s, 'L': l, 'O': o, 'NE': ne, 'NO': no, 'SE': se, 'SO': so}

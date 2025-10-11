@@ -1,6 +1,6 @@
 # main.py
 # Simulação: carrega o ambiente, cria o agente e executa passos com memória + BFS.
-# Versão com gravação de vídeo simples usando OpenCV (opcional).
+# Versão com gravação de vídeo simples usando OpenCV.
 
 import time
 from pathlib import Path
@@ -15,8 +15,8 @@ CELL_SIZE = 22                      # pixels por célula (define a resolução d
 
 def _tentar_importar_cv2():
     try:
-        import cv2  # type: ignore
-        import numpy as np  # type: ignore
+        import cv2  
+        import numpy as np 
         return cv2, np
     except Exception:
         return None, None

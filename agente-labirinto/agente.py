@@ -1,5 +1,4 @@
 # agente.py
-# Robô com memória + BFS e anti-bounce para evitar oscilar entre duas células.
 
 from collections import deque
 from typing import Dict, List, Optional, Set, Tuple
@@ -23,22 +22,23 @@ class Agente:
 
         self.passos = 0
         self.comidas_coletadas = 0
-        # Agora a quantidade de comidas pode ser passada explicitamente na instanciação
         self.comidas_alvo = comidas_alvo if comidas_alvo is not None else self.env.total_comidas
 
-        # memória do mapa descoberto
         self.mem: Dict[Tuple[int,int], str] = {}
         self.visitado: Set[Tuple[int,int]] = set()
-        self.visitas: Dict[Tuple[int,int], int] = {}  # contagem de vezes que pisou
+        self.visitas: Dict[Tuple[int,int], int] = {}
         self.plano: List[str] = []
 
-        self.ultima_pos: Optional[Tuple[int,int]] = None  # anti-bounce
+        self.ultima_pos: Optional[Tuple[int,int]] = None
 
         self._atualizar_memoria()
 
     # ===== SENSORES =====
     def getSensor(self) -> List[List[str]]:
         return self.env.get_sensor(self.i, self.j, self.dir)
+
+    def getSensorComidas(self) -> Dict[str, int]:
+        return self.env.contar_comidas_direcoes(self.i, self.j)
 
     def _atualizar_memoria(self):
         sensor = self.getSensor()
@@ -50,7 +50,7 @@ class Agente:
                 ai = self.i + (r - 1)
                 aj = self.j + (c - 1)
                 if r == 2 and c == 2:
-                    continue  # [2][2] guarda a letra da direção
+                    continue
                 self.mem[(ai, aj)] = sensor[r][c]
 
         self.visitado.add(atual)
@@ -76,7 +76,51 @@ class Agente:
             return True
         return False
 
-    # ===== PLANEJAMENTO =====
+    # ===== LÓGICA GUIADA POR COMIDA =====
+    def _map_diag_para_cardinal(self, d: str) -> str:
+        if d in ('NE', 'NO'):
+            return 'N'
+        if d in ('SE', 'SO'):
+            return 'S'
+        return d  # já é cardinal
+
+    def _ranking_direcoes_por_comida(self) -> List[str]:
+        """
+        Retorna uma lista de direções CARDINAIS em ordem de preferência, baseada na contagem de comidas:
+        - Compara N,S,L,O e NE,NO,SE,SO.
+        - Se um diagonal vencer, mapeia para: NE/NO -> N, SE/SO -> S.
+        - Empate: preferir vizinho menos visitado e que não seja a ultima_pos.
+        - Ignora direções bloqueadas por 'X'.
+        """
+        cont = self.getSensorComidas()
+        # Lista de candidatos (pode conter diagonais)
+        cand = [
+            ('N', cont['N']), ('S', cont['S']), ('L', cont['L']), ('O', cont['O']),
+            ('NE', cont['NE']), ('NO', cont['NO']), ('SE', cont['SE']), ('SO', cont['SO']),
+        ]
+        # Ordena por quantidade desc
+        cand.sort(key=lambda x: x[1], reverse=True)
+
+        preferencia: List[Tuple[int, str, Tuple[int,int]]] = []
+        vistos = set()
+        for d_raw, qtd in cand:
+            d = self._map_diag_para_cardinal(d_raw)
+            if d in vistos:
+                continue  # não repetir a mesma cardinal após mapear diagonais
+            di, dj = DIRECOES[d]
+            q = (self.i + di, self.j + dj)
+            if self.env.celula(*q) == 'X':
+                continue  # não considerar direção bloqueada
+            # desempate: 1) maior comida (já ordenado), 2) não voltar para ultima_pos, 3) menos visitas
+            bounce = 1 if (self.ultima_pos is not None and q == self.ultima_pos) else 0
+            preferencia.append((bounce, d, q))
+            vistos.add(d)
+
+        # Ordena pelo anti-bounce e menos visitas
+        preferencia.sort(key=lambda t: (t[0], self.visitas.get(t[2], 0)))
+        return [d for _, d, _ in preferencia]
+
+    # ===== PLANEJAMENTO (mantido p/ exploração) =====
     def _vizinhos_livres_mem(self, p: Tuple[int,int]) -> List[Tuple[int,int]]:
         i, j = p
         res = []
@@ -95,7 +139,6 @@ class Agente:
         while fila:
             u = fila.popleft()
             if objetivo(u):
-                # reconstrói
                 caminho: List[Tuple[int,int]] = []
                 v = u
                 while v is not None:
@@ -103,7 +146,6 @@ class Agente:
                     v = veio[v]
                 caminho.reverse()
                 return caminho
-            # expande priorizando menos visitados (reduz chance de laço)
             viz = self._vizinhos_livres_mem(u)
             viz.sort(key=lambda x: self.visitas.get(x, 0))
             for v in viz:
@@ -132,7 +174,7 @@ class Agente:
                 continue
             for di, dj in DIRECOES.values():
                 q = (i+di, j+dj)
-                if q not in self.mem:  # desconhecido
+                if q not in self.mem:
                     fronteiras.append((i, j))
                     break
         return fronteiras
@@ -140,7 +182,7 @@ class Agente:
     def _planejar(self):
         origem = (self.i, self.j)
 
-        # 1) comida conhecida mais próxima
+        # 1) comida conhecida mais próxima (memória)
         comidas = [p for p, ch in self.mem.items() if ch == 'o']
         if comidas:
             alvo_set = set(comidas)
@@ -149,7 +191,7 @@ class Agente:
                 self.plano = self._traduz_caminho_para_direcoes(caminho)
                 return
 
-        # 2) fronteira de exploração mais próxima
+        # 2) fronteira
         fronteiras = self._fronteiras_exploracao()
         if fronteiras:
             alvo_set = set(fronteiras)
@@ -158,7 +200,7 @@ class Agente:
                 self.plano = self._traduz_caminho_para_direcoes(caminho)
                 return
 
-        # 3) se já coletou tudo, saída mais próxima
+        # 3) sair se já coletou tudo
         if self.comidas_coletadas >= self.comidas_alvo:
             saidas = [p for p, ch in self.mem.items() if ch == 'S']
             if saidas:
@@ -170,51 +212,45 @@ class Agente:
 
         self.plano = []
 
-    # ===== ORDEM DE DIREÇÕES COM ANTI-BOUNCE =====
-    def _direcoes_ordenadas(self) -> List[str]:
-        """Ordena direções priorizando não voltar para ultima_pos e menos visitados."""
-        cand = []
-        for d, (di, dj) in DIRECOES.items():
-            q = (self.i + di, self.j + dj)
-            if self.env.celula(*q) == 'X':
-                continue
-            score = (
-                0 if (self.ultima_pos is None or q != self.ultima_pos) else 1,
-                self.visitas.get(q, 0)
-            )
-            cand.append((score, d, q))
-        # primeiro: não voltar (score[0]==0), depois menos visitados
-        cand.sort(key=lambda x: x[0])
-        return [d for _, d, _ in cand]
-
     # ===== UM PASSO =====
     def step(self):
+        # 0) Prioridade: seguir o sensor de comidas (direção com mais 'o')
+        ranking = self._ranking_direcoes_por_comida()
+        for d in ranking:
+            di, dj = DIRECOES[d]
+            q = (self.i + di, self.j + dj)
+            if self.env.celula(*q) != 'X':
+                self.setDirection(d)
+                if self.move():
+                    return
+
+        # 1) Se não há preferência por comida (tudo zero/bloqueado), planejar
         if not self.plano:
             self._planejar()
 
         if self.plano:
             prox = self.plano.pop(0)
             self.setDirection(prox)
-            self.move()
-            return
+            if self.move():
+                return
 
-        # Fallback 1: explorar vizinho desconhecido e NÃO voltar pra ultima_pos se possível
+        # 2) Explorar vizinho desconhecido (evitando bounce)
         for d in self._direcoes_ordenadas():
             di, dj = DIRECOES[d]
             q = (self.i + di, self.j + dj)
             if q not in self.mem and self.env.celula(*q) != 'X':
                 self.setDirection(d)
-                self.move()
-                return
+                if self.move():
+                    return
 
-        # Fallback 2: andar para vizinho livre conhecido, evitando reversão imediata
+        # 3) Andar por vizinho livre conhecido
         for d in self._direcoes_ordenadas():
             di, dj = DIRECOES[d]
             q = (self.i + di, self.j + dj)
             if self.mem.get(q, 'X') != 'X':
                 self.setDirection(d)
-                self.move()
-                return
+                if self.move():
+                    return
 
     # ===== ESTADO =====
     def terminou(self) -> bool:
